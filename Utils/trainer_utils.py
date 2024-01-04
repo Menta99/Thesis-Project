@@ -12,6 +12,7 @@ import pandas as pd
 import tensorflow as tf
 from matplotlib import pyplot as plt
 from tqdm import tqdm
+from PIL import Image
 from Utils.generic_utils import tensor_to_images, merge_metrics, send_to_telegram
 
 
@@ -111,6 +112,44 @@ def load_image(array, base_dir, image_list, img_size, start, pbar):
                                                                             interpolation='lanczos'),
                                       dtype=np.uint8)
         pbar.update(1)
+
+
+def inference_latency(model, batch_shape, num_runs, model_type='classic', warmup=1):
+    batch = tf.random.uniform(shape=batch_shape, minval=0., maxval=1., dtype=tf.float32)
+    time_scores = []
+    for _ in tqdm(range(num_runs + warmup)):
+        start_time = time.time_ns()
+        if model_type == 'latent_nca':
+            model(compose_input(batch, model.params['pool_shape'], 64, 0.5, None, False, True))
+        elif model_type == 'nca':
+            model([model.seed(batch), tf.constant(64, dtype=tf.float32, shape=(1,)),
+                   tf.constant(0.5, dtype=tf.float32, shape=(1,))])
+        else:
+            model(batch)
+        time_scores.append(time.time_ns() - start_time)
+        batch = tf.random.uniform(shape=batch_shape, minval=0., maxval=1., dtype=tf.float32)
+    return time_scores[warmup:]
+
+
+def create_dummy_dataset(num_images, shape, path):
+    for i in tqdm(range(num_images)):
+        Image.fromarray(np.random.uniform(low=0., high=255., size=shape).astype(np.uint8)).save(os.path.join(path, '{}.png'.format(i)))
+
+
+def get_elapsed_time(base_dir, model_name, latent=False):
+    if latent:
+        with open(os.path.join(base_dir, model_name, 'Logs', 'val_log.pickle'), 'rb') as f:
+            df_base = pickle.load(f)
+        df_base = df_base.groupby(by='epoch').mean()['elapsed_time']
+        with open(os.path.join(base_dir, model_name, 'Logs', 'val_ca_log.pickle'), 'rb') as f:
+            df_ca = pickle.load(f)
+        df_ca = df_ca.groupby(by='epoch').mean()['elapsed_time']
+        df_base += df_ca
+    else:
+        with open(os.path.join(base_dir, model_name, 'Logs', 'val_log.pickle'), 'rb') as f:
+            df_base = pickle.load(f)
+        df_base = df_base.groupby(by='epoch').mean()['elapsed_time']
+    return df_base
 
 
 class DataGenerator(tf.keras.utils.Sequence):
