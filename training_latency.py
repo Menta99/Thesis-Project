@@ -26,8 +26,7 @@ if gpus:
     except RuntimeError as e:
         print(e)
 
-strategy = tf.distribute.MirroredStrategy()
-with strategy.scope():
+
     dataset_directory = relative_path + 'Datasets/Dummy/'
     img_shape = tuple([int(arg) for arg in sys.argv[1:5]])
     print('Resolution: {}'.format(img_shape))
